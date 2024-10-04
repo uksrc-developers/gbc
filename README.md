@@ -65,7 +65,7 @@ This will create an interim folder where the features will be stored and a resul
 Notes: 
 
 * This code is adapted to input healpix files, so the original catalogues need to be split into healpixs for batch processing before running the code.
-* The tlv information is contained in the JSON file. This will vbe different for different healpixs - the values need to be setup before running the code.
+* The tlv information is contained in the JSON file. This will be different for different healpixs - the values need to be defined before running the code.
 
 
 ### Additional Notes 
