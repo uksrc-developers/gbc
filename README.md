@@ -43,26 +43,30 @@ The code outputs: 
 * features.fits - list of features used to train the model which are necessary to output the predictions
 * pred_thresholds.csv - predictions for different thresholds (we used tlv=0.20 for DR1)
 
-Note: For LoTSS DR1, the list of features and the predictions (prediction_0.20) can be found as a supplementary material of the paper https://doi.org/10.1093/mnras/stac1888  
-
 
 ### How to run the rode
 
-Set the environment (for example in conda):
+1. Set the environment (for example in conda):
 
 ` conda env create -f environment.yml `
 
-Run the script:
+2. Download the model. Currently download from [here](https://github.com/laraalegre/LOFARMachineLearningClassifier/tree/main/models).
+
+3. Define the paths for the necessary directories (data, project directory, models, results) in the JSON file provided.
+
+4. Run the script:
 
 ` python build_features_and_make_predictions.py <healpix number> `
 
-The [healpix number](LOFAR/DR2/healpix_batch.py) corresponds the area of the sky to be processed. The original catalogues can be split into healpixs for batch processing. 
-
-The model can be currently downloaded from [here](https://github.com/laraalegre/LOFARMachineLearningClassifier/tree/main/models).
+The [healpix number](LOFAR/DR2/healpix_batch.py) corresponds the area of the sky to be processed. 
 
 This will create an interim folder where the features will be stored and a results folder with the predictions.
-* Make sure to define the paths for the necessary directories (data, project directory, models, results) in the JSON file provided. 
-* The tlv information is contained in the JSON file for different healpixs - this needs to be setup before running the code.
+
+Notes: 
+
+* This code is adapted to input healpix files, so the original catalogues need to be split into healpixs for batch processing before running the code.
+* The tlv information is contained in the JSON file. This will vbe different for different healpixs - the values need to be setup before running the code.
+
 
 ### Additional Notes 
 
