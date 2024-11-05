@@ -1,3 +1,8 @@
+## This branch is being used to adapt the code to HP
+
+Currently inputs radio and gaussian information. 
+E.g python script_name HP_number (e.g. 333)
+
 ## Gradient Boosting Classifier for LoTSS 
 
 This repository contains part of the code used in the [MULTIWAVE demonstrator case](https://confluence.skatelescope.org/display/SRCSC/MULTIWAVE). 
