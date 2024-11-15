@@ -27,15 +27,19 @@ To be used by its own, the threshold value (tlv) for binary decisions sugested i
 
 ### Usage 
 
-E.g. Input data (LoTSS DR2): 
+E.g. Input data (LoTSS DR2 Healpix example): 
 
-a) The original full catalogues for sources and Gaussians can be found at https://lofar-surveys.org/dr2_release.html: 
-* LoTSS_DR2_v110_masked.srl.fits 
-* LoTSS_DR2_v110.gaus.fits 
+DOWNLOAD THE DATA AND THE MODEL FROM HERE 
 
-b) LR for sources and Gaussians can be found internally on Herts cluster: 
-* LoTSS_DR2_v100.gaus_13h.lr-full.fits 
-* LoTSS_DR2_v100.srl_13h.lr-full.sorted_step3_flux4.fits 
+a) The radio catalogues for sources and Gaussians: 
+ * pybdsf radio source catalogue for the central healpix being looked at: 'radio_333.fits'
+ * pybdsf radio source for central hp and nearest neighbours (nn): 'radio_333_nn.fits'
+ * gauss_radio_nn: 'gaussian_333_nn.fits'
+
+b) Likelihood ratios (LR) for sources and Gaussians: 
+ * LR source catalogue for the central healpix: 'radio_333_lr.fits'
+ * LR ratio source catalogue for the central healpix and nn: 'radio_333_nn_lr.fits'
+ * LR Gaussian catalogue for the central healpix and nn: 'gaussian_333_nn_lr.fits'
 
 The code requires the LR thresholds values used for LoTSS DR2: 
 * 13h 
@@ -46,7 +50,7 @@ The code requires the LR thresholds values used for LoTSS DR2: 
 
 The code outputs: 
 * features.fits - list of features used to train the model which are necessary to output the predictions
-* pred_thresholds.csv - predictions for different thresholds (we used tlv=0.20 for DR1)
+* pred_thresholds.csv - predictions for different thresholds (we used tlv=0.20 for DR1 and DR2)
 
 
 ### How to run the rode
@@ -61,20 +65,20 @@ The code outputs: 
 
 4. Run the script:
 
-` python build_features_and_make_predictions.py <healpix number> `
+` python build_features_and_make_predictions.py <healpix number> <LR_thresh>`
+
+Example (Healpix 333 which is situated on the n13h)
+
+` python build_features_and_make_predictions.py 333 0.309`
 
 The [healpix number](LOFAR/DR2/healpix_batch.py) corresponds the area of the sky to be processed. 
 
 This will create an interim folder where the features will be stored and a results folder with the predictions.
 
-Notes: 
+
+### Notes 
 
 * This code is adapted to input healpix files, so the original catalogues need to be split into healpixs for batch processing before running the code.
-* The tlv information is contained in the JSON file. This will be different for different healpixs - the values need to be defined before running the code.
-
-
-### Additional Notes 
-
 * The code was initially trained on LoTSS DR1 and can also be applied to LoTSS DR2 or future LoTSS data releases that follow as long as the same PyBDSF and LR methods are used. 
 * Adjustments are required for different regions of the sky, as LR thresholds vary across datasets.
 * Applying the code to different dataset distributions may require adapting the threshold value (tlv) of 0.20.
