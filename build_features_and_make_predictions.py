@@ -1,4 +1,4 @@
-# Build features for LoTSS DR2 using HEALPix:
+# Build features for LoTSS DR2 using HEALPix based on:
 
 # * PyBDSF radio properties 
 # * PyBDSF radio gaussian properties 
@@ -18,13 +18,15 @@ import argparse
 import sys
 
 # Parse command-line arguments
-parser = argparse.ArgumentParser(description='Get healpix value') 
-parser.add_argument('healpix', metavar='N', type=int, nargs='+', help='Usage: python script.py 456')
+parser = argparse.ArgumentParser(description='Get healpix and LR thresh values') 
+parser.add_argument('healpix', type=int, help='Healpix value (e.g., 333)')
+parser.add_argument('lr_tlv', type=float, help='Likelihood ratio value (e.g., 0.309)')
+
 args = parser.parse_args()
 
-# Get the healpix values from the command-line arguments
-healpix = args.healpix[0]
-tlv_lr = 0.309 # n13h
+# Access the arguments
+healpix = args.healpix
+tlv_lr = args.lr_tlv
 
 # DATA 
 # Set the path where the data can be found
@@ -32,59 +34,6 @@ BASE_DIR = os.path.abspath("..")
 data_path = os.path.join(BASE_DIR, "data/hp_outputs")
 results_path = os.path.join(BASE_DIR, "data/gbc_outputs")
 models_path = os.path.join(BASE_DIR, "models/gbc")
-
-# Just confirm data paths are correct 
-#print(BASE_DIR), print(data_path), print(results_path), print(models_path)
-#print(os.listdir(data_path))
-#print(os.listdir(models_path))
-#print(os.listdir(results_path))
-
-#####  JSON input parameters  - May be necessary for pipeline
-
-## Load parameters from JSON file
-#with open(os.path.join("config.json"), "r") as f:
- #   config = json.load(f)
-
-# Set the path of the main dir and where the data can be found and will be stored
-#MAIN_dir = config["main_dir"]
-#models_path =  os.path.join(MAIN_dir,  config["models_dir"])
-#data_path = os.path.join(MAIN_dir, config["data_dir"])
-# Input data 
-#lr_path =  os.path.join(data_path, config["inputs"]["data"])
-# Output data 
-#results_path =  os.path.join(data_path, config["outputs"]["results"])
-#interim_path =  os.path.join(data_path, config["outputs"]["interim"])
-
-#print(results_path)
-#if not os.path.exists(results_path):
-#    os.makedirs(results_path)
-#    print("Creating results dir")
-#if not os.path.exists(interim_path):
-#    os.makedirs(interim_path)
-#   print("Creating interim dir")
-  
-# Define the threshod value based on the healpix location
-#if (healpix > int(0)) & (healpix< int(10)):
-#    tlv_lr = config["tlv_lr_healpix"]["n13h"]
-#elif (healpix > 10) & (healpix<20):
-#    tlv_lr = config["tlv_lr_healpix"]["s13h"]
-#else:
-#    tlv_lr = config["tlv_lr_healpix"]["0h"]
-
-# Creating a function to read the fits catalogues
-#def read_fits(file):
-#    'converts a fits file to an astropy table'
-#    data_file = os.path.join(lr_path, str(healpix), file)
-#    with fits.open(data_file) as cat:
-#        table = Table(cat[1].data)
-#        return table
-
-# Test field P21
-#pybdsf_radio = read_fits(config["file_names"]["pybdsf_radio"]).to_pandas()
-#gauss_radio = read_fits(config["file_names"]["gauss_radio"]).to_pandas()
-#pybdsf_lr = read_fits(config["file_names"]["pybdsf_lr"]).to_pandas()
-#gauss_lr = read_fits(config["file_names"]["gauss_lr"]).to_pandas()
-
 
 # -------------------------------- READ THE CATALOGUES -------------------------------
 # Creating a function to read the fits catalogues
@@ -119,8 +68,6 @@ gauss_radio = pd.merge(gauss_radio_nn, pybdsf_lr["Source_Name"], on="Source_Name
 #pybdsf_lr = pybdsf_nn_lr
 #gauss_radio = gauss_radio_nn
 #gauss_lr = gauss_nn_lr
-
-
 
 # ### Finally, for DR2 catalogues, the LR catalogue contains already the radio information
 # Let's use the radio info from the lofar-surveys page and the lr values from Wendy(Herts)
@@ -206,13 +153,6 @@ nn_info = pd.DataFrame({'Source_Name':pybdsf_classes['Source_Name'],
                         'NN_dist': nn_match[1].arcsec,
                         'NN_flux_ratio': pybdsf_nn_classes.iloc[nn_match[0]]['Total_flux'].values/pybdsf_classes['Total_flux']})
 
-#nn_info = pd.DataFrame({'Source_Name':pybdsf_classes['Source_Name'],
-#                        'NN': pybdsf_classes.iloc[nn_match[0]]['Source_Name'].values,
-#                       'NN_lr': pybdsf_classes.iloc[nn_match[0]]['lr'].values,
-#                        'NN_lr_dist': pybdsf_classes.iloc[nn_match[0]]['lr_dist'].values,
-#                        'NN_dist': nn_match[1].arcsec,
-#                        'NN_flux_ratio': pybdsf_classes.iloc[nn_match[0]]['Total_flux'].values/pybdsf_classes['Total_flux']}
-
 
 # Number of NN within 45''
 print('Computing the number of sources within 45".')
@@ -286,10 +226,9 @@ print('Computing additional information for the Gaussians.')
 output['gauss_flux_ratio'] = output['gauss_total_flux']/output['Total_flux']
 
 # EXPORTING THE RESULTS
-# output.dtypes
-#
+
 # Reordering the columns
-#Columns with NaN values 
+# Columns with NaN values 
 for i in output.columns:
     a = output[output[i].isna()]
     if len(a)!= 0: 
@@ -365,8 +304,6 @@ for i in thresholds:
     make_thresholds(predictions, threshold = i)
 
 # Export predictions 
-# Export as cvs 
-#predictions.set_index('Source_Name').to_csv(os.path.join(results_path, str(healpix)+'nn_pred_thresholds.csv'))
 # Export as fits
 pred_name = "pred_threshods_" +  str(healpix) + ".fits"
 pred_cat = Table.from_pandas(predictions)
