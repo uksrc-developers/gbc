@@ -35,6 +35,11 @@ data_path = os.path.join(BASE_DIR, "data/hp_outputs")
 results_path = os.path.join(BASE_DIR, "data/gbc_outputs")
 models_path = os.path.join(BASE_DIR, "models/gbc")
 
+if not os.path.exists(results_path):
+	os.makedirs(results_path)
+else:
+	pass
+
 # -------------------------------- READ THE CATALOGUES -------------------------------
 # Creating a function to read the fits catalogues
 def read_fits(file):
@@ -50,27 +55,16 @@ pybdsf_radio_nn = read_fits("radio_"+str(healpix)+"_nn.fits") # 'radio_333_nn.fi
 pybdsf_lr = read_fits("radio_"+str(healpix)+"_lr.fits") # 'radio_333_lr.fits'
 pybdsf_nn_lr = read_fits("radio_"+str(healpix)+"_nn_lr.fits") #'radio_333_nn_lr.fits'
 
-## gaussian radio catalogue for the central HP cannot be used because it has the same amount of sources that pybsdf 
-## gauss_radio = read_fits("gaussian_"+str(healpix)+".fits") # 'gaussian_333.fits'  WRONG CATALOGUE
 gauss_radio_nn = read_fits("gaussian_"+str(healpix)+"_nn.fits") # ''gaussian_333_nn.fits'
-# gauss_lr =  read_fits("gaussian_"+str(healpix)+"_lr.fits") # "gaussian_333_lr.fits DOES NOT EXIST
 gauss_nn_lr = read_fits("gaussian_"+str(healpix)+"_nn_lr.fits") #gaussian_333_nn_lr.fits
 
-# -------------------------------- RECOVER GAUSS LR and GAUSS radio -------------------------------
+# ---------------------------- RECOVER GAUSS LR and GAUSS radio Main HP -------------------------------
 # RECOVER GAUSS LR
 gauss_lr = pd.merge(gauss_nn_lr, pybdsf_lr["Source_Name"], on="Source_Name", how="inner")
 # RECOVER GAUSS radio
 gauss_radio = pd.merge(gauss_radio_nn, pybdsf_lr["Source_Name"], on="Source_Name", how="inner") # Could use pybdsf_radio to recover it as well
 
 # -------------------------------- DEFINE AREA WHERE TO RUN CODE  -------------------------------
-## To run on the 9 hp assume:
-#pybdsf_radio = pybdsf_radio_nn
-#pybdsf_lr = pybdsf_nn_lr
-#gauss_radio = gauss_radio_nn
-#gauss_lr = gauss_nn_lr
-
-# ### Finally, for DR2 catalogues, the LR catalogue contains already the radio information
-# Let's use the radio info from the lofar-surveys page and the lr values from Wendy(Herts)
 
 # define columns that we need from radio catalogue and from the lr catalogue
 pybdsf_radio_cols = ['Source_Name', 'RA', 'DEC', 
@@ -142,7 +136,6 @@ gauss_info = gauss_nr.merge(gauss_max_info, on='Source_Name', how='left')#.drop_
 pybdsf_coord = SkyCoord(pybdsf_classes['RA'], pybdsf_classes['DEC'], unit="deg")
 pybdsf_nn_coord = SkyCoord(pybdsf_nn_classes['RA'], pybdsf_nn_classes['DEC'], unit="deg")
 #  NN information
-#nn_match = match_coordinates_sky(pybdsf_coord, pybdsf_coord,  nthneighbor=2)
 nn_match = match_coordinates_sky(pybdsf_coord, pybdsf_nn_coord,  nthneighbor=2)
 
 
@@ -156,7 +149,6 @@ nn_info = pd.DataFrame({'Source_Name':pybdsf_classes['Source_Name'],
 
 # Number of NN within 45''
 print('Computing the number of sources within 45".')
-#idx1, idx2, dist2d, dist3d = pybdsf_coord.search_around_sky(pybdsf_coord, 45*u.arcsec)
 idx1, idx2, dist2d, dist3d = search_around_sky(pybdsf_coord, pybdsf_nn_coord, 45*u.arcsec) 
 idxs, counts_45 = np.unique(idx1, return_counts=True) # includes counting itself
 
@@ -303,8 +295,7 @@ predictions = pd.DataFrame({'Source_Name': master['Source_Name'],
 for i in thresholds:  
     make_thresholds(predictions, threshold = i)
 
-# Export predictions 
-# Export as fits
+# Export predictions as fits
 pred_name = "pred_threshods_" +  str(healpix) + ".fits"
 pred_cat = Table.from_pandas(predictions)
 pred_cat.write(os.path.join(results_path, pred_name), overwrite=True)
