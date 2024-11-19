@@ -1,12 +1,12 @@
-## Gradient Boosting Classifier for LoTSS 
+# Gradient Boosting Classifier for LoTSS 
 
 This repository contains part of the code used in the [MULTIWAVE demonstrator case](https://confluence.skatelescope.org/display/SRCSC/MULTIWAVE). 
 
-**Description**: Predict which sources of LoTSS can be cross-matched by LR or require visual analysis using small datasets based on healpixs.
+**Description**: Predict which sources of LoTSS can be cross-matched by LR or require visual analysis using small datasets based on HEALPix.
 
 **Paper reference**:  https://doi.org/10.1093/mnras/stac1888 
 
-### Code aims:
+## Code aims
 
 This code aims to predict which sources from the LOFAR Two-Metre Sky Survey (LoTSS) can be automatically cross-matched with optical and infrared sources using the Likelihood Ratio (LR) technique or otherwise require visual analysis. A Gradient Boosting Classifier (GBC) was trained to assist this process. 
 
@@ -20,17 +20,34 @@ The output of the code is a binary classification: 
 
 To be used by its own, the threshold value (tlv) for binary decisions sugested is 0.20. This was optimised to adapt the model to the imbalanced datasets of LoTSS using LoTSS DR1. This threshold separates sources that can be cross-matched by LR from those requiring human inspection. The code also accounts for the varying LR threshold values across different areas of the sky used to specific regions of the survey. 
 
-### Usage 
+## Usage 
 
-E.g. Input data (LoTSS DR2): 
+Download the [project folder](https://lofar-surveys.org/public/uksrc/project.zip) (untracked data and model) from the LOFAR-surveys website.
 
-a) The original full catalogues for sources and Gaussians can be found at https://lofar-surveys.org/dr2_release.html: 
-* LoTSS_DR2_v110_masked.srl.fits 
-* LoTSS_DR2_v110.gaus.fits 
+### Structure of the project
 
-b) LR for sources and Gaussians can be found internally on Herts cluster: 
-* LoTSS_DR2_v100.gaus_13h.lr-full.fits 
-* LoTSS_DR2_v100.srl_13h.lr-full.sorted_step3_flux4.fits 
+```
+Project
+│
+├── README.md                       <- Overview and instructions
+├── Licence                         <- Licence
+├── environment.yml                 <- Python packages to create a conda environment
+│
+├── mw-gbc
+|   └── build_features_and_make_predictions.py  <- Code to output the predictions
+├── data (untracked)  
+│   └── hp_outputs
+│       ├── radio_333.fits          <- PyBDSF radio source catalogue for the central HEALPix (hp) 
+│       ├── radio_333_nn.fits       <- PyBDSF radio source for central hp and nearest neighbours (nn)
+│       ├── gaussian_333_nn.fit     <- PyBDSF Gaussian catalogue for the central hp and nn
+│       ├── radio_333_lr.fits       <- LR source catalogue for the central hp
+│       ├── radio_333_nn_lr.fits    <- LR ratio source catalogue for the central hp and nn
+│       └── gaussian_333_nn_lr.fits <- LR Gaussian catalogue for the central hpealpix and nn
+└── models (untracked)
+    └── gbc
+        └── GradientBoostingClassifier_A1_31504_18F_TT1234_B1_exp3.joblib <- model trained on LoTSS-DR1
+
+```
 
 The code requires the LR thresholds values used for LoTSS DR2: 
 * 13h 
@@ -41,35 +58,47 @@ The code requires the LR thresholds values used for LoTSS DR2: 
 
 The code outputs: 
 * features.fits - list of features used to train the model which are necessary to output the predictions
-* pred_thresholds.csv - predictions for different thresholds (we used tlv=0.20 for DR1)
+* pred_thresholds.csv - predictions for different thresholds (we used tlv=0.20 for DR1 and DR2)
 
 
-### How to run the rode
+### Environment
+It is important to have installed the following python packages versions:
+```
+joblib=1.4.2
+scikit-learn=0.23.1 (ideally install 0.23.1 but also works with scikit-learn=0.23.2)
+python=3.8.19 or python=3.8.18 
+joblib=1.4.2
+pandas=1.2.4
+scipy=1.9.3
+numpy=1.20.2 or numpy=1.20.3
+astropy=4.2.1 or astropy=5.2
+```
 
-1. Set the environment (for example in conda):
+Set the environment (for example in conda):
 
-` conda env create -f environment.yml `
+`conda env create -f environment.yml `
 
-2. Download the model. Currently download from [here](https://github.com/laraalegre/LOFARMachineLearningClassifier/tree/main/models).
+Or install individual packages with conda:
 
-3. Define the paths for the necessary directories (data, project directory, models, results) in the JSON file provided.
+`conda create -n gbc python=3.8.18 joblib=1.4.2 scipy=1.9.3 `
 
-4. Run the script:
+Some packages require conda-forge:
 
-` python build_features_and_make_predictions.py <healpix number> `
-
-The [healpix number](LOFAR/DR2/healpix_batch.py) corresponds the area of the sky to be processed. 
-
-This will create an interim folder where the features will be stored and a results folder with the predictions.
-
-Notes: 
-
-* This code is adapted to input healpix files, so the original catalogues need to be split into healpixs for batch processing before running the code.
-* The tlv information is contained in the JSON file. This will be different for different healpixs - the values need to be defined before running the code.
+`conda install -c conda-forge scikit-learn=0.23.2 numpy=1.20.3 astropy=5.2.1 pandas=1.2.4 `
 
 
-### Additional Notes 
+### Run the code
 
+`python build_features_and_make_predictions.py <HEALPix number> <LR_thresh>`
+
+Example: HEALPix 333 which is situated on the n13h
+
+`python build_features_and_make_predictions.py 333 0.309`
+
+
+### Notes 
+
+* This code is adapted to input HEALPix files, so the original catalogues need to be split into HEALPix for batch processing before running the code.
 * The code was initially trained on LoTSS DR1 and can also be applied to LoTSS DR2 or future LoTSS data releases that follow as long as the same PyBDSF and LR methods are used. 
 * Adjustments are required for different regions of the sky, as LR thresholds vary across datasets.
 * Applying the code to different dataset distributions may require adapting the threshold value (tlv) of 0.20.

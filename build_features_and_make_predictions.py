@@ -1,4 +1,5 @@
-# Build features for LoTSS DR2 based on: 
+# Build features for LoTSS DR2 using HEALPix based on:
+
 # * PyBDSF radio properties 
 # * PyBDSF radio gaussian properties 
 # * Likelihood ratios 
@@ -8,70 +9,62 @@ import pandas as pd
 import numpy as np
 from astropy.table import Table, join
 import os
-from astropy.coordinates import SkyCoord, match_coordinates_sky
+from astropy.coordinates import SkyCoord, match_coordinates_sky, search_around_sky
 from astropy import units as u
 from astropy.io import fits
 from joblib import load
 import json
 import argparse 
+import sys
 
 # Parse command-line arguments
-parser = argparse.ArgumentParser(description='Get healpix value') 
-parser.add_argument('healpix', metavar='N', type=int, nargs='+', help='Usage: python script.py 456')
+parser = argparse.ArgumentParser(description='Get healpix and LR thresh values') 
+parser.add_argument('healpix', type=int, help='Healpix value (e.g., 333)')
+parser.add_argument('lr_tlv', type=float, help='Likelihood ratio value (e.g., 0.309)')
+
 args = parser.parse_args()
 
-# Get the healpix values from the command-line arguments
-healpix = args.healpix[0]
+# Access the arguments
+healpix = args.healpix
+tlv_lr = args.lr_tlv
 
-# Load parameters from JSON file
-with open(os.path.join("config.json"), "r") as f:
-    config = json.load(f)
+# DATA 
+# Set the path where the data can be found
+BASE_DIR = os.path.abspath("..")
+data_path = os.path.join(BASE_DIR, "data/hp_outputs")
+results_path = os.path.join(BASE_DIR, "data/gbc_outputs")
+models_path = os.path.join(BASE_DIR, "models/gbc")
 
-# Set the path of the main dir and where the data can be found and will be stored
-MAIN_dir = config["main_dir"]
-models_path =  os.path.join(MAIN_dir,  config["models_dir"])
-data_path = os.path.join(MAIN_dir, config["data_dir"])
-# Input data 
-lr_path =  os.path.join(data_path, config["inputs"]["data"])
-# Output data 
-results_path =  os.path.join(data_path, config["outputs"]["results"])
-interim_path =  os.path.join(data_path, config["outputs"]["interim"])
-
-print(results_path)
 if not os.path.exists(results_path):
-    os.makedirs(results_path)
-    print("Creating results dir")
-if not os.path.exists(interim_path):
-    os.makedirs(interim_path)
-    print("Creating interim dir")
-  
-# Define the threshod value based on the healpix location
-if (healpix > int(0)) & (healpix< int(10)):
-    tlv_lr = config["tlv_lr_healpix"]["n13h"]
-elif (healpix > 10) & (healpix<20):
-    tlv_lr = config["tlv_lr_healpix"]["s13h"]
+	os.makedirs(results_path)
 else:
-    tlv_lr = config["tlv_lr_healpix"]["0h"]
+	pass
 
+# -------------------------------- READ THE CATALOGUES -------------------------------
 # Creating a function to read the fits catalogues
 def read_fits(file):
     'converts a fits file to an astropy table'
-    data_file = os.path.join(lr_path, str(healpix), file)
+    data_file = os.path.join(data_path, file)
     with fits.open(data_file) as cat:
         table = Table(cat[1].data)
-        return table
+        return table.to_pandas()
 
 
-# Test field P21
-pybdsf_radio = read_fits(config["file_names"]["pybdsf_radio"]).to_pandas()
-gauss_radio = read_fits(config["file_names"]["gauss_radio"]).to_pandas()
+pybdsf_radio = read_fits("radio_"+str(healpix)+".fits") # 'radio_333.fits' 
+pybdsf_radio_nn = read_fits("radio_"+str(healpix)+"_nn.fits") # 'radio_333_nn.fits'
+pybdsf_lr = read_fits("radio_"+str(healpix)+"_lr.fits") # 'radio_333_lr.fits'
+pybdsf_nn_lr = read_fits("radio_"+str(healpix)+"_nn_lr.fits") #'radio_333_nn_lr.fits'
 
-pybdsf_lr = read_fits(config["file_names"]["pybdsf_lr"]).to_pandas()
-gauss_lr = read_fits(config["file_names"]["gauss_lr"]).to_pandas()
+gauss_radio_nn = read_fits("gaussian_"+str(healpix)+"_nn.fits") # ''gaussian_333_nn.fits'
+gauss_nn_lr = read_fits("gaussian_"+str(healpix)+"_nn_lr.fits") #gaussian_333_nn_lr.fits
 
+# ---------------------------- RECOVER GAUSS LR and GAUSS radio Main HP -------------------------------
+# RECOVER GAUSS LR
+gauss_lr = pd.merge(gauss_nn_lr, pybdsf_lr["Source_Name"], on="Source_Name", how="inner")
+# RECOVER GAUSS radio
+gauss_radio = pd.merge(gauss_radio_nn, pybdsf_lr["Source_Name"], on="Source_Name", how="inner") # Could use pybdsf_radio to recover it as well
 
-# ### Finally, for DR2 catalogues, the LR catalogue contains already the radio information
-# Let's use the radio info from the lofar-surveys page and the lr values from Wendy(Herts)
+# -------------------------------- DEFINE AREA WHERE TO RUN CODE  -------------------------------
 
 # define columns that we need from radio catalogue and from the lr catalogue
 pybdsf_radio_cols = ['Source_Name', 'RA', 'DEC', 
@@ -84,7 +77,8 @@ gauss_lr_cols = pybdsf_lr_cols + ['Gaus_id']
 
 pybdsf_classes = pd.merge(pybdsf_radio[pybdsf_radio_cols], pybdsf_lr[pybdsf_lr_cols], on='Source_Name')
 gauss = pd.merge(gauss_radio[gauss_radio_cols], gauss_lr[gauss_lr_cols], on=['Source_Name', 'Gaus_id'])
-
+# Create nn classes
+pybdsf_nn_classes = pd.merge(pybdsf_radio_nn[pybdsf_radio_cols], pybdsf_nn_lr[pybdsf_lr_cols], on='Source_Name')
 
 # -------------------------------- CALCULATE FEATURES -------------------------------
 
@@ -135,24 +129,29 @@ gauss_max_info = gauss_max_join[['Source_Name', 'lr', 'lr_dist',
 # Note: cannot drop duplicates here 
 gauss_info = gauss_nr.merge(gauss_max_info, on='Source_Name', how='left')#.drop_duplicates(['Source_Name', 'Gaus_id'])
 
+
 # PYBDSF PROPERTIES
-# NEAREST NEIGHBOURS 
+# NEAREST NEIGHBOURS (adapted to healpix)
 # Creating the coordinates to search for NN
 pybdsf_coord = SkyCoord(pybdsf_classes['RA'], pybdsf_classes['DEC'], unit="deg")
-
+pybdsf_nn_coord = SkyCoord(pybdsf_nn_classes['RA'], pybdsf_nn_classes['DEC'], unit="deg")
 #  NN information
-nn_match = match_coordinates_sky(pybdsf_coord, pybdsf_coord,  nthneighbor=2)
+nn_match = match_coordinates_sky(pybdsf_coord, pybdsf_nn_coord,  nthneighbor=2)
+
+
 nn_info = pd.DataFrame({'Source_Name':pybdsf_classes['Source_Name'],
-                        'NN': pybdsf_classes.iloc[nn_match[0]]['Source_Name'].values,
-                        'NN_lr': pybdsf_classes.iloc[nn_match[0]]['lr'].values,
-                        'NN_lr_dist': pybdsf_classes.iloc[nn_match[0]]['lr_dist'].values,
+                        'NN': pybdsf_nn_classes.iloc[nn_match[0]]['Source_Name'].values,
+                        'NN_lr': pybdsf_nn_classes.iloc[nn_match[0]]['lr'].values,
+                        'NN_lr_dist': pybdsf_nn_classes.iloc[nn_match[0]]['lr_dist'].values,
                         'NN_dist': nn_match[1].arcsec,
-                        'NN_flux_ratio': pybdsf_classes.iloc[nn_match[0]]['Total_flux'].values/pybdsf_classes['Total_flux']})
+                        'NN_flux_ratio': pybdsf_nn_classes.iloc[nn_match[0]]['Total_flux'].values/pybdsf_classes['Total_flux']})
+
 
 # Number of NN within 45''
 print('Computing the number of sources within 45".')
-idx1, idx2, dist2d, dist3d = pybdsf_coord.search_around_sky(pybdsf_coord, 45*u.arcsec)
+idx1, idx2, dist2d, dist3d = search_around_sky(pybdsf_coord, pybdsf_nn_coord, 45*u.arcsec) 
 idxs, counts_45 = np.unique(idx1, return_counts=True) # includes counting itself
+
 nn_counts_45 = pd.DataFrame({'Source_Name': pybdsf_classes.iloc[idxs]['Source_Name'],
                              'NN_45':counts_45-1})
 # Combine extra information on a cat 
@@ -219,10 +218,9 @@ print('Computing additional information for the Gaussians.')
 output['gauss_flux_ratio'] = output['gauss_total_flux']/output['Total_flux']
 
 # EXPORTING THE RESULTS
-# output.dtypes
-#
+
 # Reordering the columns
-#Columns with NaN values 
+# Columns with NaN values 
 for i in output.columns:
     a = output[output[i].isna()]
     if len(a)!= 0: 
@@ -253,15 +251,15 @@ output_df = pd.concat(total, axis = 1)
 # Sorting by Source Name
 output_df_sorted = output_df.sort_values(by=["Source_Name"], ignore_index = True)
 
-file_name = str(healpix)+'_features.fits'
+file_name = "features_"+str(healpix)+".fits"
 output_cat = Table.from_pandas(output)
-output_cat.write(os.path.join(interim_path, file_name), overwrite=True)
-print("Wrote features to file.")
+output_cat.write(os.path.join(results_path, file_name), overwrite=True)
+print("Wrote features to file:", file_name)
 
 # ------------------------------------ PREDICTIONS -------------------------------
 
 # Use the table that was created in the step before
-with fits.open(os.path.join(interim_path, file_name)) as cat:
+with fits.open(os.path.join(results_path, file_name)) as cat:
     master = Table(cat[1].data).to_pandas()
 
 # Select model
@@ -297,6 +295,8 @@ predictions = pd.DataFrame({'Source_Name': master['Source_Name'],
 for i in thresholds:  
     make_thresholds(predictions, threshold = i)
 
-# Export predictions 
-predictions.set_index('Source_Name').to_csv(os.path.join(results_path, str(healpix)+'_pred_thresholds.csv'))
-print("Wrote the predictions to file.")
+# Export predictions as fits
+pred_name = "pred_threshods_" +  str(healpix) + ".fits"
+pred_cat = Table.from_pandas(predictions)
+pred_cat.write(os.path.join(results_path, pred_name), overwrite=True)
+print("Wrote the predictions to file:", pred_name )
