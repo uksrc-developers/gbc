@@ -7,83 +7,95 @@
 # Libraries 
 import pandas as pd
 import numpy as np
-from astropy.table import Table, join
+from astropy.table import Table
 import os
 from astropy.coordinates import SkyCoord, match_coordinates_sky, search_around_sky
 from astropy import units as u
 from astropy.io import fits
 from joblib import load
-import json
-import argparse 
-import sys
+import yaml
 
-# Parse command-line arguments
-parser = argparse.ArgumentParser(description='Get healpix and LR thresh values') 
-parser.add_argument('healpix', type=int, help='Healpix value (e.g., 333)')
-parser.add_argument('lr_tlv', type=float, help='Likelihood ratio value (e.g., 0.309)')
 
-args = parser.parse_args()
+# Load the YAML configuration file
+def load_config(file_path):
+    with open(file_path, 'r') as file:
+        config = yaml.safe_load(file)
+    return config
 
-# Access the arguments
-healpix = args.healpix
-tlv_lr = args.lr_tlv
+config_file = 'config.yaml'
+config = load_config(config_file)
+    
+# Access paths
+paths = config.get('catalogue_paths', {})
+base_path = paths.get('base_path')
+data_path = paths.get('data_path')
+models_path= paths.get('models_path')
 
-# DATA 
-# Set the path where the data can be found
-BASE_DIR = os.path.abspath("..")
-data_path = os.path.join(BASE_DIR, "data/hp_outputs")
-results_path = os.path.join(BASE_DIR, "data/gbc_outputs")
-models_path = os.path.join(BASE_DIR, "models/gbc")
+# Access constants
+constants = config.get('constants', {})
+tlv_lr = constants.get('tlv_lr')
+healpix = constants.get('healpix')
 
-if not os.path.exists(results_path):
-	os.makedirs(results_path)
-else:
-	pass
-
-# -------------------------------- READ THE CATALOGUES -------------------------------
 # Creating a function to read the fits catalogues
 def read_fits(file):
     'converts a fits file to an astropy table'
-    data_file = os.path.join(data_path, file)
+    data_file = os.path.join(data_path, "hp_"+str(healpix), file)
     with fits.open(data_file) as cat:
         table = Table(cat[1].data)
         return table.to_pandas()
 
 
+#Use Healpix catalogues 
 pybdsf_radio = read_fits("radio_"+str(healpix)+".fits") # 'radio_333.fits' 
-pybdsf_radio_nn = read_fits("radio_"+str(healpix)+"_nn.fits") # 'radio_333_nn.fits'
-pybdsf_lr = read_fits("radio_"+str(healpix)+"_lr.fits") # 'radio_333_lr.fits'
-pybdsf_nn_lr = read_fits("radio_"+str(healpix)+"_nn_lr.fits") #'radio_333_nn_lr.fits'
+pybdsf_radio_nn = read_fits("radio_nn_"+str(healpix)+".fits") # 'radio_nn_333.fits'
+pybdsf_lr = read_fits("radio_lr_"+str(healpix)+".fits") # 'radio_lr_33.fits' 
+pybdsf_nn_lr = read_fits("radio_nn_lr_"+str(healpix)+".fits") #'radio_nn_lr_333.fits'
 
-gauss_radio_nn = read_fits("gaussian_"+str(healpix)+"_nn.fits") # ''gaussian_333_nn.fits'
-gauss_nn_lr = read_fits("gaussian_"+str(healpix)+"_nn_lr.fits") #gaussian_333_nn_lr.fits
+gauss_radio = read_fits("gaussian_"+str(healpix)+".fits") # 'gaussian_333.fits'
+gauss_radio_nn = read_fits("gaussian_nn_"+str(healpix)+".fits") # ''gaussian_nn_333.fits' 
+gauss_lr =  read_fits("gaussian_lr_"+str(healpix)+".fits") # "gaussian_lr_333.fits'
+gauss_nn_lr = read_fits("gaussian_nn_lr_"+str(healpix)+".fits") #gaussian_nn_lr_333.fits
 
-# ---------------------------- RECOVER GAUSS LR and GAUSS radio Main HP -------------------------------
-# RECOVER GAUSS LR
-gauss_lr = pd.merge(gauss_nn_lr, pybdsf_lr["Source_Name"], on="Source_Name", how="inner")
-# RECOVER GAUSS radio
-gauss_radio = pd.merge(gauss_radio_nn, pybdsf_lr["Source_Name"], on="Source_Name", how="inner") # Could use pybdsf_radio to recover it as well
+## To run on the 9 hp assume:
+#pybdsf_radio = pybdsf_radio_nn
+#pybdsf_lr = pybdsf_nn_lr
+#gauss_radio = gauss_radio_nn
+#gauss_lr = gauss_nn_lr
 
-# -------------------------------- DEFINE AREA WHERE TO RUN CODE  -------------------------------
+# Define the columns required from the PyBDSF radio catalogue and the likelihood ratio (LR) catalogue.
+# Columns extracted from the radio catalogue:
+# - Source_Name: Unique identifier for the PyBDSF source
+# - RA, DEC: Right Ascension and Declination of the source
+# - Peak_flux, Total_flux: Peak and total flux measurements
+# - Maj, Min: Major and minor axis measurements
+# - DC_Maj, DC_Min: Deconvolved major and minor axis measurements
+# - S_Code: Source classification code
+# - Mosaic_ID: Identifier for the mosaic where the source is located
+pybdsf_radio_cols = ['Source_Name', 'RA', 'DEC', 'Peak_flux', 'Total_flux', 'Maj', 'Min', 'DC_Maj', 'DC_Min', 'S_Code', 'Mosaic_ID']
 
-# define columns that we need from radio catalogue and from the lr catalogue
-pybdsf_radio_cols = ['Source_Name', 'RA', 'DEC', 
-                    'Peak_flux', 'Total_flux', 'Maj', 'Min', 'DC_Maj', 'DC_Min', 
-                    'S_Code', 'Mosaic_ID']
+# Define columns for PyBDSF Gaussians, including an additional identifier ('Gaus_id')
 gauss_radio_cols = pybdsf_radio_cols + ['Gaus_id']
 
+# Define the columns required from the LR catalogue:
+# - Source_Name: Unique identifier for the PyBDSF source
+# - lr: Likelihood ratio value
+# - lr_dist: Distance measurement associated with the LR match
 pybdsf_lr_cols = ['Source_Name','lr', 'lr_dist']
 gauss_lr_cols = pybdsf_lr_cols + ['Gaus_id']
 
+# Combine the PyBDSF radio information with the LR information into single catalogues
+# For the PyBDSF sources 
 pybdsf_classes = pd.merge(pybdsf_radio[pybdsf_radio_cols], pybdsf_lr[pybdsf_lr_cols], on='Source_Name')
+# And for the Gaussians 
 gauss = pd.merge(gauss_radio[gauss_radio_cols], gauss_lr[gauss_lr_cols], on=['Source_Name', 'Gaus_id'])
-# Create nn classes
+# Add also information about the nearest neighbours healpixs for the PyBDSF sources
 pybdsf_nn_classes = pd.merge(pybdsf_radio_nn[pybdsf_radio_cols], pybdsf_nn_lr[pybdsf_lr_cols], on='Source_Name')
+
 
 # -------------------------------- CALCULATE FEATURES -------------------------------
 
 print("Starting to process healpix", healpix)
-print("Number of pybdsf sources is:", len(pybdsf_radio) )
+print("Number of pybdsf sources is:", len(pybdsf_radio))
 
 # Gaussian properties
 # Number of Gaussians
@@ -95,30 +107,28 @@ gauss_nr = pd.DataFrame(
     })
 
 # Gaussians' LR, Gaussians' LR distance & Gaussians' LR major axis
-# First combine the Gaussian catalogue with the Gaussian LR catalogue to obtain some additional information like the major axis of the radio emission
-print('Computing Gaussian information for the Gaussian with the highest LR value or the brighest Gaussian if LR below LoTSS-DR1 LR threshold.')
-# Select maximum LR Gaussian
-gauss_max_lr_aux = gauss[['Source_Name', 'lr']].groupby(['Source_Name']).max().reset_index()
-# Remove NaNs
-gauss_max_lr = gauss_max_lr_aux[gauss_max_lr_aux['lr'].notnull()]
-# Select brightest Gaussian
-gauss_max_flux_aux = gauss[['Source_Name', 'Total_flux']].groupby(['Source_Name']).max().reset_index()
-# Select the ones that do not have LR info 
-gauss_max_flux = gauss_max_flux_aux[gauss_max_flux_aux['Source_Name'].
-                   isin(gauss_max_lr_aux[gauss_max_lr_aux['lr'].isnull()]['Source_Name'])]
-# Get the Gaussians with the maximum LR
-gauss_max_lr_info = gauss.set_index(['Source_Name', 'lr']).loc[gauss_max_lr[['Source_Name', 'lr']].apply(tuple, axis=1)].reset_index()
-# Get the Gaussians with the maximum flux
-gauss_max_flux_info = gauss.set_index(['Source_Name', 'Total_flux']).loc[gauss_max_flux[['Source_Name', 'Total_flux']].apply(tuple, axis=1)].reset_index()
 
+print('Computing Gaussian information for the Gaussian with the highest LR value or the brighest Gaussian if LR below the LR threshold.')
+
+# Select Gaussians that have useful LR values by removing the 1e20 values and selecting sources with LR above the threshold 
+gauss_with_lr = gauss[(gauss['lr']!=1e20) & (gauss['lr']>=tlv_lr)]
+# Take the maximum value for the LR values for these Gaussians
+gauss_max_lr = gauss_with_lr[['Source_Name', 'lr']].groupby(['Source_Name']).max().reset_index()
+# Now look at the Gaussians that do not have LR information
+gauss_without_lr = gauss[(gauss['lr']==1e20) | (gauss['lr']<=tlv_lr)]
+# And are also not already comtemplated in the gaussians with LR
+gauss_max_flux_aux = gauss_without_lr[~gauss_without_lr["Source_Name"].isin(gauss_with_lr["Source_Name"])]
+# From these ones then take the brightest Gaussians 
+gauss_max_flux = gauss_max_flux_aux[['Source_Name', 'Total_flux']].groupby(['Source_Name']).max().reset_index()
+# Get the Gaussians with the maximum LR from the main catalogue
+gauss_max_lr_info = gauss.set_index(['Source_Name', 'lr']).loc[gauss_max_lr[['Source_Name', 'lr']].apply(tuple, axis=1)].reset_index()
+# Get the Gaussians with the maximum flux from the main catalogue
+gauss_max_flux_info = gauss.set_index(['Source_Name', 'Total_flux']).loc[gauss_max_flux[['Source_Name', 'Total_flux']].apply(tuple, axis=1)].reset_index()
 # Concatenate the 2 tables 
 gauss_max_join = pd.concat([gauss_max_lr_info, gauss_max_flux_info])
+
 # Create the output table
-gauss_max_info = gauss_max_join[['Source_Name', 'lr', 'lr_dist',
-                            'DC_Maj', 'Maj',
-                            'DC_Min', 'Min',
-                            'Total_flux',
-                            'Gaus_id']].rename(
+gauss_max_info = gauss_max_join[['Source_Name', 'lr', 'lr_dist', 'DC_Maj', 'Maj', 'DC_Min', 'Min', 'Total_flux','Gaus_id']].rename(
     columns={'lr': 'gauss_lr',  'lr_dist': 'gauss_lr_dist', 
              'DC_Maj': 'gauss_dc_maj', 'Maj': 'gauss_maj',
              'DC_Min': 'gauss_dc_min', 'Min': 'gauss_min',
@@ -126,19 +136,19 @@ gauss_max_info = gauss_max_join[['Source_Name', 'lr', 'lr_dist',
             })
 
 # Include Major axis of the gaussian with the hightest LR
-# Note: cannot drop duplicates here 
+# Note: cannot drop duplicates here (This needs to be worked out before when computing the Gaussian values)
 gauss_info = gauss_nr.merge(gauss_max_info, on='Source_Name', how='left')#.drop_duplicates(['Source_Name', 'Gaus_id'])
 
-
 # PYBDSF PROPERTIES
-# NEAREST NEIGHBOURS (adapted to healpix)
+# NEAREST NEIGHBOURS 
 # Creating the coordinates to search for NN
 pybdsf_coord = SkyCoord(pybdsf_classes['RA'], pybdsf_classes['DEC'], unit="deg")
 pybdsf_nn_coord = SkyCoord(pybdsf_nn_classes['RA'], pybdsf_nn_classes['DEC'], unit="deg")
 #  NN information
+#nn_match = match_coordinates_sky(pybdsf_coord, pybdsf_coord,  nthneighbor=2)
 nn_match = match_coordinates_sky(pybdsf_coord, pybdsf_nn_coord,  nthneighbor=2)
 
-
+# 
 nn_info = pd.DataFrame({'Source_Name':pybdsf_classes['Source_Name'],
                         'NN': pybdsf_nn_classes.iloc[nn_match[0]]['Source_Name'].values,
                         'NN_lr': pybdsf_nn_classes.iloc[nn_match[0]]['lr'].values,
@@ -146,10 +156,18 @@ nn_info = pd.DataFrame({'Source_Name':pybdsf_classes['Source_Name'],
                         'NN_dist': nn_match[1].arcsec,
                         'NN_flux_ratio': pybdsf_nn_classes.iloc[nn_match[0]]['Total_flux'].values/pybdsf_classes['Total_flux']})
 
+#Old way of computing without taking the nn into consideration
+#nn_info = pd.DataFrame({'Source_Name':pybdsf_classes['Source_Name'],
+#                        'NN': pybdsf_classes.iloc[nn_match[0]]['Source_Name'].values,
+#                       'NN_lr': pybdsf_classes.iloc[nn_match[0]]['lr'].values,
+#                        'NN_lr_dist': pybdsf_classes.iloc[nn_match[0]]['lr_dist'].values,
+#                        'NN_dist': nn_match[1].arcsec,
+#                        'NN_flux_ratio': pybdsf_classes.iloc[nn_match[0]]['Total_flux'].values/pybdsf_classes['Total_flux']})
 
 # Number of NN within 45''
 print('Computing the number of sources within 45".')
-idx1, idx2, dist2d, dist3d = search_around_sky(pybdsf_coord, pybdsf_nn_coord, 45*u.arcsec) 
+#idx1, idx2, dist2d, dist3d = pybdsf_coord.search_around_sky(pybdsf_coord, 45*u.arcsec)
+idx1, idx2, dist2d, dist3d = search_around_sky(pybdsf_coord, pybdsf_nn_coord, 45*u.arcsec) # NEW
 idxs, counts_45 = np.unique(idx1, return_counts=True) # includes counting itself
 
 nn_counts_45 = pd.DataFrame({'Source_Name': pybdsf_classes.iloc[idxs]['Source_Name'],
@@ -162,6 +180,7 @@ np.testing.assert_equal(len(nn_info), len(pybdsf_classes), err_msg="Number of py
 # Merging all the catalogues
 output = gauss_info.merge(nn_info, on='Source_Name').merge(pybdsf_classes, on='Source_Name')
 
+# %%
 # Changing LR information
 # Create an aux column with 0 (no lr info) and 1 (lr info)
 # For the pybdsf lr 
@@ -218,7 +237,6 @@ print('Computing additional information for the Gaussians.')
 output['gauss_flux_ratio'] = output['gauss_total_flux']/output['Total_flux']
 
 # EXPORTING THE RESULTS
-
 # Reordering the columns
 # Columns with NaN values 
 for i in output.columns:
@@ -253,17 +271,20 @@ output_df_sorted = output_df.sort_values(by=["Source_Name"], ignore_index = True
 
 file_name = "features_"+str(healpix)+".fits"
 output_cat = Table.from_pandas(output)
-output_cat.write(os.path.join(results_path, file_name), overwrite=True)
+output_cat.write(os.path.join(data_path, "hp_"+str(healpix), file_name), overwrite=True)
 print("Wrote features to file:", file_name)
 
 # ------------------------------------ PREDICTIONS -------------------------------
 
 # Use the table that was created in the step before
-with fits.open(os.path.join(results_path, file_name)) as cat:
+with fits.open(os.path.join(data_path, file_name)) as cat:
     master = Table(cat[1].data).to_pandas()
+
 
 # Select model
 model = load(os.path.join(models_path, 'GradientBoostingClassifier_A1_31504_18F_TT1234_B1_exp3.joblib'))
+
+print("model loaded")
 
 features_pred = ['Maj','Min','Total_flux','Peak_flux','log_n_gauss', # PyBDSF info
                 'log_lr_tlv', 'lr_dist', # PyBDSF LR
@@ -295,8 +316,13 @@ predictions = pd.DataFrame({'Source_Name': master['Source_Name'],
 for i in thresholds:  
     make_thresholds(predictions, threshold = i)
 
-# Export predictions as fits
-pred_name = "pred_threshods_" +  str(healpix) + ".fits"
+# Export predictions 
+# Export as fits
+pred_name = "pred_threshods_" + str(healpix) + ".fits"
 pred_cat = Table.from_pandas(predictions)
-pred_cat.write(os.path.join(results_path, pred_name), overwrite=True)
+pred_cat.write(os.path.join(data_path, "hp_"+str(healpix),  pred_name), overwrite=True)
 print("Wrote the predictions to file:", pred_name )
+
+
+
+

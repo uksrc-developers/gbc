@@ -1,0 +1,12 @@
+# config.yaml
+
+# Paths to catalogues
+catalogue_paths:
+  base_path:  ".."
+  data_path: "../data/outputs"
+  models_path: "../models/gbc"
+
+# Constants
+constants:
+  tlv_lr: 0.309
+  healpix: 333
