@@ -9,12 +9,23 @@ import pandas as pd
 import numpy as np
 from astropy.table import Table
 import os
+import sys
 from astropy.coordinates import SkyCoord, match_coordinates_sky, search_around_sky
 from astropy import units as u
 from astropy.io import fits
 from joblib import load
 import yaml
 
+print("")
+
+#--------------------------  Define paths and get variables  -------------------------- 
+# Get the healpix value from the command-line arguments
+if len(sys.argv) != 2:
+    print("Usage: python script.py <healpix>")
+    sys.exit(1)
+
+healpix = int(sys.argv[1])
+print(f"The healpix number we are about to work on is: {healpix}")
 
 # Load the YAML configuration file
 def load_config(file_path):
@@ -32,9 +43,10 @@ data_path = paths.get('data_path')
 models_path= paths.get('models_path')
 
 # Access constants
-constants = config.get('constants', {})
-tlv_lr = constants.get('tlv_lr')
-healpix = constants.get('healpix')
+#constants = config.get('constants', {})
+#tlv_lr = constants.get('tlv_lr')
+#healpix = constants.get('healpix')
+tlv_lr_values = config.get('tlv_lr', {})
 
 # Creating a function to read the fits catalogues
 def read_fits(file):
@@ -44,8 +56,7 @@ def read_fits(file):
         table = Table(cat[1].data)
         return table.to_pandas()
 
-
-#Use Healpix catalogues 
+#--------------------------   Use Healpix catalogues  --------------------------   
 pybdsf_radio = read_fits("radio_"+str(healpix)+".fits") # 'radio_333.fits' 
 pybdsf_radio_nn = read_fits("radio_nn_"+str(healpix)+".fits") # 'radio_nn_333.fits'
 pybdsf_lr = read_fits("radio_lr_"+str(healpix)+".fits") # 'radio_lr_33.fits' 
@@ -56,6 +67,45 @@ gauss_radio = read_fits("gaussian_"+str(healpix)+".fits") # 'gaussian_333.fits'
 gauss_lr =  read_fits("gaussian_lr_"+str(healpix)+".fits") # "gaussian_lr_333.fits'
 #gauss_nn_lr = read_fits("gaussian_nn_lr_"+str(healpix)+".fits") #gaussian_nn_lr_333.fits
 
+#--------------------------   Define which tlv lr use --------------------------   
+#13 hour field
+cond_13h_min = (pybdsf_radio['RA']/15) > (13-6)
+cond_13h_max = (pybdsf_radio['RA']/15) < (13+6)
+cond_dec_n = pybdsf_radio['DEC'] >= 32.375
+cond_dec_s = pybdsf_radio['DEC'] < 32.375
+#1H
+cond_1h_min = (pybdsf_radio['RA']/15) > 21
+cond_1h_max = (pybdsf_radio['RA']/15) < 3
+cond_1_0_max = (pybdsf_radio['RA']/15) < 0
+cond_1_0_min = (pybdsf_radio['RA']/15) > 0
+
+print("min", (pybdsf_radio['RA']/15).min())
+print("max", (pybdsf_radio['RA']/15).max())
+n13h = cond_13h_min & cond_13h_max & cond_dec_n 
+s13h = cond_13h_min & cond_13h_max & cond_dec_s
+x1h = (cond_1h_min & cond_1_0_max) | (cond_1_0_min & cond_1h_max)
+
+
+# Detect if more than one condition is True
+if sum([(n13h == True).all(), (s13h == True).all(), (x1h == True).all()]) > 1:
+	print("Error: The healpix ovelaps areas with different thresholds. Aborting test.")
+	exit(1)
+
+# Assign the `tlv_lr`
+if (n13h == True).all():
+    print("Field is n13h")
+    tlv_lr = tlv_lr_values.get("n13h")
+elif (s13h == True).all():
+    print("Field is s13h")
+    tlv_lr = tlv_lr_values.get("s13h")
+elif (x1h == True).all():
+    print("Field is 1h")
+    tlv_lr = tlv_lr_values.get("1h")
+else:
+    print("Error: No valid condition is True. Something is wrong. Aborting script.")
+    exit(1)  # Exit with an error code
+
+#--------------------------  Replace 1e20 values --------------------------  
 
 # 1e20 values will be replaced because the script was adapted take lr and lr_dist with NANs and not values of 1e20.
 print("There are", len(gauss_lr[gauss_lr['lr']==1e20]) + len(pybdsf_lr[pybdsf_lr['lr']==1e20]) + len(pybdsf_nn_lr[pybdsf_nn_lr['lr']==1e20]), "1e20 values.")
@@ -76,6 +126,9 @@ print("Number of 1e20 values after replacing:", len(gauss_lr[gauss_lr['lr']==1e2
 #pybdsf_lr = pybdsf_nn_lr
 #gauss_radio = gauss_radio_nn
 #gauss_lr = gauss_nn_lr
+
+
+#--------------------------  Define necessary columns from catalogues --------------------------  
 
 # Define the columns required from the PyBDSF radio catalogue and the likelihood ratio (LR) catalogue.
 # Columns extracted from the radio catalogue:
@@ -283,7 +336,7 @@ output_df = pd.concat(total, axis = 1)
 # Sorting by Source Name
 output_df_sorted = output_df.sort_values(by=["Source_Name"], ignore_index = True)
 
-file_name = "features_"+str(healpix)+".fits"
+file_name = "TESTING_features_"+str(healpix)+".fits"
 output_cat = Table.from_pandas(output)
 output_cat.write(os.path.join(data_path, "hp_"+str(healpix), file_name), overwrite=True)
 print("Wrote features to file:", file_name)
@@ -332,10 +385,10 @@ for i in thresholds:
 
 # Export predictions 
 # Export as fits
-pred_name = "pred_threshods_" + str(healpix) + ".fits"
+pred_name = "TESTING_pred_threshods_" + str(healpix) + ".fits"
 pred_cat = Table.from_pandas(predictions)
 pred_cat.write(os.path.join(data_path, "hp_"+str(healpix),  pred_name), overwrite=True)
-print("Wrote the predictions to file:", pred_name )
+print("Wrote the predictions to file:", pred_name)
 
 
 

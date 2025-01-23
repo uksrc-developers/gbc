@@ -3,10 +3,16 @@
 # Paths to catalogues
 catalogue_paths:
   base_path:  ".."
-  data_path: "../data/outputs"
+  data_path: "../data/testing/"
   models_path: "../models/gbc"
 
 # Constants
-constants:
-  tlv_lr: 0.309
-  healpix: 333
+#constants:
+# tlv_lr: 0.309
+# healpix: 333 #will come from the command line
+
+
+tlv_lr:
+  n13h: 0.309 #(n, dec>=32.375) (centred on 13h +-6H)
+  s13h: 0.328 #(s, dec<=32.375) (centred on 13h +-6H)
+  1h: 0.394 #(0h, but they call it 1h in the paper ra=1h00m (below 3h and above 21h) and centred in dec=28d00s 
